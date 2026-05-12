@@ -17,11 +17,7 @@ export default function ProductDetailPage() {
   const supabase = createClient();
   const { addItem } = useCart();
 
-  useEffect(() => {
-    fetchProduct();
-  }, [id]);
-
-  const fetchProduct = async () => {
+  async function fetchProduct() {
     const { data: prod } = await supabase
       .from("products")
       .select("*, profiles!products_farmer_id_fkey(*)")
@@ -40,11 +36,15 @@ export default function ProductDetailPage() {
       setReviews(revs || []);
     }
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    fetchProduct();
+  }, [id]);
 
   const handleAddToCart = () => {
     if (!product) return;
-    addItem({
+    const addedToCart = addItem({
       product_id: product.id,
       name: product.name,
       price: product.price,
@@ -53,6 +53,7 @@ export default function ProductDetailPage() {
       farmer_id: product.farmer_id,
       farmer_name: farmer?.full_name || "Farmer",
     });
+    if (!addedToCart) return;
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
   };

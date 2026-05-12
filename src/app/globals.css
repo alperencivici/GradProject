@@ -3,13 +3,15 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-heading: var(--font-outfit);
+  --font-sans: var(--font-inter, Arial, Helvetica, sans-serif);
+  --font-heading: var(--font-outfit, Arial, Helvetica, sans-serif);
 }
 
 :root {
   --background: #fafaf9;
   --foreground: #1c1917;
+  --font-inter: Arial, Helvetica, sans-serif;
+  --font-outfit: Arial, Helvetica, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -17,7 +17,7 @@ export interface CartItem {
 
 interface CartContextType {
   items: CartItem[];
-  addItem: (item: Omit<CartItem, "id">) => void;
+  addItem: (item: Omit<CartItem, "id">) => boolean;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -29,9 +29,19 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    const saved = window.localStorage.getItem("kirsof-cart");
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved) as CartItem[];
+    } catch {
+      return [];
+    }
+  });
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -42,10 +52,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
         const { data: prof } = await supabase.from("profiles").select("role").eq("id", data.user.id).single();
         setUserRole(prof?.role || null);
       }
+      setAuthReady(true);
     };
     init();
     
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event: string, session: any) => {
       setUser(session?.user || null);
       if (session?.user) {
         const { data: prof } = await supabase.from("profiles").select("role").eq("id", session.user.id).single();
@@ -55,13 +66,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const saved = localStorage.getItem("kirsof-cart");
-    if (saved) {
-      try {
-        setItems(JSON.parse(saved));
-      } catch {}
-    }
-    
     return () => authListener.subscription.unsubscribe();
   }, []);
 
@@ -70,18 +74,26 @@ export function CartProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("kirsof-cart", JSON.stringify(items));
   }, [items]);
 
-  const addItem = (item: Omit<CartItem, "id">) => {
+  const addItem = (item: Omit<CartItem, "id">): boolean => {
+    if (!authReady) {
+      toast.error("Checking your account. Please try again in a moment.");
+      return false;
+    }
     if (!user) {
       toast.error("Please log in to add items to your cart.");
-      return;
+      return false;
     }
     if (userRole === "farmer") {
       toast.error("Farmers cannot purchase products. Switch to a consumer account.");
-      return;
+      return false;
     }
     if (userRole === "admin") {
       toast.error("Admin accounts cannot purchase products.");
-      return;
+      return false;
+    }
+    if (userRole !== "consumer") {
+      toast.error("Only consumer accounts can add items to the cart.");
+      return false;
     }
 
     let wasAdded = false;
@@ -100,6 +112,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (wasAdded) {
       toast.success(`${item.name} added to cart!`);
     }
+    return wasAdded;
   };
 
   const removeItem = (productId: string) => {

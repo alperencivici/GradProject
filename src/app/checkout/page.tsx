@@ -69,7 +69,7 @@ export default function CheckoutPage() {
         const { data: farmers } = await supabase.from("profiles").select("id, location_lat, location_lng").in("id", farmerIds);
         if (farmers) {
           const locs: Record<string, { lat: number; lng: number }> = {};
-          farmers.forEach(f => {
+          farmers.forEach((f: { id: string; location_lat: number | string | null; location_lng: number | string | null }) => {
             if (f.location_lat && f.location_lng) {
               locs[f.id] = { lat: Number(f.location_lat), lng: Number(f.location_lng) };
             }
@@ -99,15 +99,9 @@ export default function CheckoutPage() {
   // Cargo unavailable if >500km (roughly one day of shipping)
   const cargoBlocked = maxDistanceKm !== null && maxDistanceKm > 500;
 
-  const shippingFee = deliveryMethod === "pickup" ? 0 : deliveryMethod === "courier" ? 25 : cargoFee;
+  const effectiveDeliveryMethod = deliveryMethod === "cargo" && cargoBlocked ? "pickup" : deliveryMethod;
+  const shippingFee = effectiveDeliveryMethod === "pickup" ? 0 : effectiveDeliveryMethod === "courier" ? 25 : cargoFee;
   const grandTotal = totalPrice + shippingFee;
-
-  // If cargo was selected but is now blocked, reset to pickup
-  useEffect(() => {
-    if (deliveryMethod === "cargo" && cargoBlocked) {
-      setDeliveryMethod("pickup");
-    }
-  }, [cargoBlocked, deliveryMethod]);
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,7 +120,7 @@ export default function CheckoutPage() {
         buyer_id: user.id,
         status: "paid",
         total_amount: grandTotal,
-        delivery_method: deliveryMethod,
+        delivery_method: effectiveDeliveryMethod,
         shipping_fee: shippingFee,
         withholding_tax: withholdingTax,
       })
@@ -243,7 +237,7 @@ export default function CheckoutPage() {
                 type="button"
                 onClick={() => setDeliveryMethod("pickup")}
                 className={`p-5 rounded-xl border-2 text-left transition-all cursor-pointer ${
-                  deliveryMethod === "pickup" ? "border-emerald-500 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"
+                  effectiveDeliveryMethod === "pickup" ? "border-emerald-500 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"
                 }`}
               >
                 <div className="text-2xl mb-2">📍</div>
@@ -257,7 +251,7 @@ export default function CheckoutPage() {
                 type="button"
                 onClick={() => setDeliveryMethod("courier")}
                 className={`p-5 rounded-xl border-2 text-left transition-all cursor-pointer ${
-                  deliveryMethod === "courier" ? "border-emerald-500 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"
+                  effectiveDeliveryMethod === "courier" ? "border-emerald-500 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"
                 }`}
               >
                 <div className="text-2xl mb-2">🚲</div>
@@ -274,7 +268,7 @@ export default function CheckoutPage() {
                 className={`p-5 rounded-xl border-2 text-left transition-all relative ${
                   cargoBlocked
                     ? "border-stone-200 bg-stone-50 opacity-60 cursor-not-allowed"
-                    : deliveryMethod === "cargo"
+                    : effectiveDeliveryMethod === "cargo"
                       ? "border-emerald-500 bg-emerald-50 cursor-pointer"
                       : "border-stone-200 bg-white hover:border-stone-300 cursor-pointer"
                 }`}
@@ -378,7 +372,7 @@ export default function CheckoutPage() {
                 <span className="font-medium">₺{totalPrice.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-stone-600">
-                <span>Shipping ({deliveryMethod})</span>
+                <span>Shipping ({effectiveDeliveryMethod})</span>
                 <span className="font-medium">{shippingFee === 0 ? "Free" : `₺${shippingFee.toFixed(2)}`}</span>
               </div>
               <div className="flex justify-between text-amber-700 bg-amber-50 px-3 py-2 rounded-lg text-sm">

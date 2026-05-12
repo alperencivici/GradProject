@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import AddressForm from "@/components/AddressForm";
 
 export default function AdminDashboard() {
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -16,21 +15,21 @@ export default function AdminDashboard() {
   const [userSearch, setUserSearch] = useState("");
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [editUserAddress, setEditUserAddress] = useState("");
+  const [editUserCoords, setEditUserCoords] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
   const [adminImgFile, setAdminImgFile] = useState<File | null>(null);
   const [adminImgPreview, setAdminImgPreview] = useState<string>("");
   const supabase = createClient();
   const router = useRouter();
 
-  useEffect(() => { fetchAll(); }, []);
+  const orderStatuses = ["pending", "paid", "shipped", "completed", "return_requested", "admin_review", "returned", "canceled"];
 
-  const fetchAll = async () => {
+  async function fetchAll() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
-    setUser(user);
 
     const { data: prof } = await supabase.from("profiles").select("*").eq("id", user.id).single();
     if (!prof || prof.role !== "admin") { router.push("/dashboard"); return; }
-    setProfile(prof);
 
     const { data: allUsers } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
     setUsers(allUsers || []);
@@ -45,7 +44,9 @@ export default function AdminDashboard() {
     setReviews(allReviews || []);
 
     setLoading(false);
-  };
+  }
+
+  useEffect(() => { fetchAll(); }, []);
 
   const handleDeleteProduct = async (id: string) => {
     if (!confirm("Delete this product? This action cannot be undone.")) return;
@@ -64,15 +65,41 @@ export default function AdminDashboard() {
     setOrders(orders.map(o => o.id === id ? { ...o, status } : o));
   };
 
+  const handleAdminReturnDecision = async (id: string, approved: boolean) => {
+    const status = approved ? "returned" : "completed";
+    await supabase.from("orders").update({ status }).eq("id", id);
+    setOrders(orders.map(o => o.id === id ? { ...o, status } : o));
+  };
+
+  const handleDeleteAccount = async (targetUser: any) => {
+    if (!confirm(`Delete ${targetUser.full_name || "this user"} and all related account data? This cannot be undone.`)) return;
+    const { error } = await supabase.rpc("admin_delete_user", { p_user_id: targetUser.id });
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setUsers(users.filter(u => u.id !== targetUser.id));
+    setEditingUser(null);
+  };
+
+  const openEditUser = (u: any) => {
+    setEditingUser(u);
+    setEditUserAddress(u.address || "");
+    setEditUserCoords({
+      lat: u.location_lat ? Number(u.location_lat) : null,
+      lng: u.location_lng ? Number(u.location_lng) : null,
+    });
+  };
+
   const handleSaveUser = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const updates = { 
       full_name: formData.get("full_name"), 
       phone: formData.get("phone"), 
-      address: formData.get("address"),
-      location_lat: formData.get("location_lat") ? parseFloat(formData.get("location_lat") as string) : null,
-      location_lng: formData.get("location_lng") ? parseFloat(formData.get("location_lng") as string) : null,
+      address: editUserAddress,
+      location_lat: editUserCoords.lat,
+      location_lng: editUserCoords.lng,
       role: formData.get("role") 
     };
     await supabase.from("profiles").update(updates).eq("id", editingUser.id);
@@ -88,7 +115,7 @@ export default function AdminDashboard() {
     // Upload new image if selected
     if (adminImgFile) {
       const fileExt = adminImgFile.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
+      const fileName = `${crypto.randomUUID()}.${fileExt}`;
       const filePath = `product_images/${fileName}`;
       const { error: uploadError } = await supabase.storage.from('images').upload(filePath, adminImgFile);
       if (!uploadError) {
@@ -127,13 +154,38 @@ export default function AdminDashboard() {
   );
 
   const statusBadge = (s: string) => {
-    const m: Record<string, string> = { pending: "bg-stone-100 text-stone-600", paid: "bg-blue-100 text-blue-700", shipped: "bg-amber-100 text-amber-700", completed: "bg-emerald-100 text-emerald-700", cancelled: "bg-red-100 text-red-600" };
+    const m: Record<string, string> = {
+      pending: "bg-stone-100 text-stone-600",
+      paid: "bg-blue-100 text-blue-700",
+      shipped: "bg-amber-100 text-amber-700",
+      completed: "bg-emerald-100 text-emerald-700",
+      cancelled: "bg-red-100 text-red-600",
+      canceled: "bg-red-100 text-red-600",
+      return_requested: "bg-orange-100 text-orange-700",
+      admin_review: "bg-indigo-100 text-indigo-700",
+      returned: "bg-purple-100 text-purple-700",
+    };
     return m[s] || m.pending;
   };
 
   const roleBadge = (r: string) => {
     const m: Record<string, string> = { admin: "bg-purple-100 text-purple-700", farmer: "bg-emerald-100 text-emerald-700", consumer: "bg-blue-100 text-blue-700" };
     return m[r] || "bg-stone-100 text-stone-600";
+  };
+
+  const statusLabel = (s: string) => {
+    const labels: Record<string, string> = {
+      pending: "Pending",
+      paid: "Paid",
+      shipped: "Shipped",
+      completed: "Completed",
+      cancelled: "Cancelled",
+      canceled: "Cancelled",
+      return_requested: "Return Requested",
+      admin_review: "Admin Review",
+      returned: "Returned",
+    };
+    return labels[s] || s;
   };
 
   return (
@@ -188,12 +240,12 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-2xl p-6 border border-stone-100 shadow-sm">
               <h3 className="font-heading font-bold text-lg text-stone-900 mb-4">Order Status Breakdown</h3>
               <div className="space-y-2">
-                {["pending", "paid", "shipped", "completed", "cancelled"].map(s => {
+                {orderStatuses.map(s => {
                   const count = orders.filter(o => o.status === s).length;
                   const pct = orders.length > 0 ? (count / orders.length * 100) : 0;
                   return (
-                    <div key={s} className="flex items-center gap-3">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase w-24 text-center ${statusBadge(s)}`}>{s}</span>
+                    <div key={s} className="grid grid-cols-[9rem_1fr_2rem] items-center gap-3">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full text-center whitespace-nowrap ${statusBadge(s)}`}>{statusLabel(s)}</span>
                       <div className="flex-1 bg-stone-100 rounded-full h-2.5 overflow-hidden">
                         <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
@@ -240,7 +292,7 @@ export default function AdminDashboard() {
                 <div className="col-span-3 text-sm text-stone-600">{u.phone || "—"}</div>
                 <div className="col-span-3 text-sm text-stone-500 flex justify-between items-center">
                   {new Date(u.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  <button onClick={() => setEditingUser(u)} className="text-xs text-blue-600 font-semibold hover:underline px-2 py-1 bg-blue-50 rounded-lg">Edit</button>
+                  <button onClick={() => openEditUser(u)} className="text-xs text-blue-600 font-semibold hover:underline px-2 py-1 bg-blue-50 rounded-lg">Edit</button>
                 </div>
               </div>
             ))}
@@ -276,19 +328,46 @@ export default function AdminDashboard() {
       {/* ─── ORDERS ─── */}
       {tab === "orders" && (
         <div className="space-y-3">
+          {orders.some(o => o.status === "admin_review") && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5">
+              <h3 className="font-heading font-bold text-lg text-indigo-900 mb-3">Returns Awaiting Admin Review</h3>
+              <div className="space-y-3">
+                {orders.filter(o => o.status === "admin_review").map(o => (
+                  <div key={o.id} className="bg-white rounded-xl border border-indigo-100 p-4 flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="font-mono text-sm font-bold text-stone-700">#{o.id.substring(0, 8).toUpperCase()}</p>
+                      <p className="text-sm font-semibold text-stone-800">{o.profiles?.full_name || "Customer"}</p>
+                      <p className="text-xs text-orange-700 mt-1">{o.return_reason || "No return reason provided"}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleAdminReturnDecision(o.id, true)} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 cursor-pointer">Approve Return</button>
+                      <button onClick={() => handleAdminReturnDecision(o.id, false)} className="px-4 py-2 bg-stone-100 text-stone-700 rounded-lg text-xs font-bold hover:bg-stone-200 cursor-pointer">Reject Return</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {orders.map(o => (
             <div key={o.id} className="bg-white rounded-xl border border-stone-100 shadow-sm p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div>
                   <p className="font-mono text-sm font-bold text-stone-700">#{o.id.substring(0, 8).toUpperCase()}</p>
                   <p className="text-xs text-stone-500">{o.profiles?.full_name} · {new Date(o.created_at).toLocaleDateString()}</p>
+                  {o.return_reason && <p className="text-xs text-orange-600 mt-1">Return: {o.return_reason}</p>}
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className="capitalize text-sm text-stone-600">{o.delivery_method}</span>
-                <select value={o.status} onChange={e => handleUpdateOrderStatus(o.id, e.target.value)} className={`text-xs font-bold px-3 py-1.5 rounded-full uppercase cursor-pointer border-0 ${statusBadge(o.status)}`}>
-                  {["pending", "paid", "shipped", "completed", "cancelled"].map(s => <option key={s} value={s}>{s}</option>)}
+                <select value={o.status} onChange={e => handleUpdateOrderStatus(o.id, e.target.value)} className={`text-xs font-bold px-3 py-1.5 rounded-full cursor-pointer border-0 ${statusBadge(o.status)}`}>
+                  {orderStatuses.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                 </select>
+                {o.status === "admin_review" && (
+                  <>
+                    <button onClick={() => handleAdminReturnDecision(o.id, true)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 cursor-pointer">Approve</button>
+                    <button onClick={() => handleAdminReturnDecision(o.id, false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 cursor-pointer">Reject</button>
+                  </>
+                )}
                 <p className="text-lg font-extrabold text-stone-900 ml-2">₺{Number(o.total_amount).toFixed(2)}</p>
               </div>
             </div>
@@ -318,10 +397,10 @@ export default function AdminDashboard() {
       )}
       {/* EDIT USER MODAL */}
       {editingUser && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveUser} className="bg-white rounded-2xl p-8 w-full max-w-2xl shadow-2xl relative">
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 overflow-y-auto p-4">
+          <form onSubmit={handleSaveUser} className="bg-white rounded-2xl p-8 w-full max-w-2xl shadow-2xl relative my-6 mx-auto">
             <button type="button" onClick={() => setEditingUser(null)} className="absolute top-6 right-6 text-stone-400 hover:text-stone-600 transition-colors">✕</button>
-            <h3 className="text-2xl font-heading font-extrabold text-stone-900 mb-6">Edit User Profile</h3>
+            <h3 className="text-2xl font-heading font-extrabold text-stone-900 mb-6 pr-16">Edit User Profile</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="md:col-span-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-1.5">Full Name</label>
@@ -343,23 +422,27 @@ export default function AdminDashboard() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-1.5">Address</label>
-                <textarea name="address" rows={2} defaultValue={editingUser.address} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-medium resize-none" />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-1.5">Latitude <span className="text-stone-400 font-normal normal-case">(optional)</span></label>
-                <input name="location_lat" type="number" step="0.00000001" defaultValue={editingUser.location_lat} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-medium" />
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-1.5">Longitude <span className="text-stone-400 font-normal normal-case">(optional)</span></label>
-                <input name="location_lng" type="number" step="0.00000001" defaultValue={editingUser.location_lng} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-medium" />
+                <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-1.5">Address & Location</label>
+                <AddressForm
+                  initialAddress={editingUser.address || ""}
+                  initialCoords={{
+                    lat: editingUser.location_lat ? Number(editingUser.location_lat) : null,
+                    lng: editingUser.location_lng ? Number(editingUser.location_lng) : null,
+                  }}
+                  onChange={(address, coords) => {
+                    setEditUserAddress(address);
+                    if (coords) setEditUserCoords(coords);
+                  }}
+                />
               </div>
             </div>
             
-            <div className="mt-8 flex justify-end gap-3 border-t border-stone-100 pt-6">
-              <button type="button" onClick={() => setEditingUser(null)} className="px-6 py-3 bg-stone-100/80 text-stone-700 hover:bg-stone-200 rounded-xl font-bold transition-all cursor-pointer">Cancel</button>
-              <button type="submit" className="px-6 py-3 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl font-bold shadow-lg shadow-emerald-600/20 transition-all cursor-pointer">Save Changes</button>
+            <div className="mt-8 flex flex-col sm:flex-row justify-between gap-3 border-t border-stone-100 pt-6">
+              <button type="button" onClick={() => handleDeleteAccount(editingUser)} className="px-6 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold transition-all cursor-pointer">Delete Account</button>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setEditingUser(null)} className="px-6 py-3 bg-stone-100/80 text-stone-700 hover:bg-stone-200 rounded-xl font-bold transition-all cursor-pointer">Cancel</button>
+                <button type="submit" className="px-6 py-3 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl font-bold shadow-lg shadow-emerald-600/20 transition-all cursor-pointer">Save Changes</button>
+              </div>
             </div>
           </form>
         </div>

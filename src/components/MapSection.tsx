@@ -6,26 +6,44 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import Link from "next/link";
 
-// Fix default marker icons
-const DefaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+const DefaultIcon = L.divIcon({
+  html: `<div style="
+    width: 26px; height: 26px;
+    background: #059669;
+    border: 3px solid white;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 3px 10px rgba(5, 150, 105, 0.35);
+  "><div style="
+    width: 8px; height: 8px;
+    background: white;
+    border-radius: 50%;
+    margin: 6px auto;
+  "></div></div>`,
+  className: "",
+  iconSize: [26, 26],
+  iconAnchor: [13, 26],
+  popupAnchor: [0, -24],
 });
 
-const SelectedIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [30, 49],
-  iconAnchor: [15, 49],
-  popupAnchor: [1, -40],
-  shadowSize: [49, 49],
-  className: "selected-marker",
+const SelectedIcon = L.divIcon({
+  html: `<div style="
+    width: 32px; height: 32px;
+    background: #f59e0b;
+    border: 4px solid white;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
+  "><div style="
+    width: 9px; height: 9px;
+    background: white;
+    border-radius: 50%;
+    margin: 7px auto;
+  "></div></div>`,
+  className: "",
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -30],
 });
 
 // User location icon
@@ -82,10 +100,12 @@ export default function MapSection({
   farmers,
   selectedFarmerId,
   userLocation,
+  currentUserId,
 }: {
   farmers: Farmer[];
   selectedFarmerId?: string | null;
   userLocation?: { lat: number; lng: number } | null;
+  currentUserId?: string | null;
 }) {
   const center: [number, number] =
     userLocation
@@ -147,9 +167,12 @@ export default function MapSection({
                 <div style={{ width: "56px", height: "56px", borderRadius: "16px", background: "rgba(255,255,255,0.25)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", fontSize: "24px", fontWeight: "800", border: "2px solid rgba(255,255,255,0.3)" }}>
                   {farmer.full_name?.charAt(0)}
                 </div>
-                <h3 style={{ fontSize: "18px", fontWeight: "800", margin: "0 0 4px 0", letterSpacing: "-0.01em" }}>{farmer.full_name}</h3>
+                <h3 style={{ fontSize: "18px", fontWeight: "800", margin: "0 0 4px 0", letterSpacing: "-0.01em" }}>
+                  {farmer.full_name}
+                  {farmer.id === currentUserId && " (You)"}
+                </h3>
                 <span style={{ fontSize: "11px", background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: "999px", fontWeight: "600" }}>
-                  🌾 Verified Farmer
+                  {farmer.id === currentUserId ? "🏠 Your Farm" : "🌾 Verified Farmer"}
                 </span>
               </div>
 

@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
 
   // Listen for the PASSWORD_RECOVERY event from supabase auth
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event: string) => {
       if (event === "PASSWORD_RECOVERY") {
         // User arrived via the password reset link — they're now in the recovery state
       }

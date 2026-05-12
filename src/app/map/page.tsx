@@ -18,64 +18,67 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 
 const MapSection = dynamic(() => import("@/components/MapSection"), { ssr: false });
 
+type FarmerProfile = {
+  id: string;
+  full_name?: string | null;
+  address?: string | null;
+  location_lat?: number | string | null;
+  location_lng?: number | string | null;
+  phone?: string | null;
+  avatar_url?: string | null;
+};
+
 export default function MapPage() {
   const [farmers, setFarmers] = useState<any[]>([]);
   const [allFarmers, setAllFarmers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [selectedFarmer, setSelectedFarmer] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [productCounts, setProductCounts] = useState<Record<string, number>>({});
 
-  // User geolocation
+  // User location comes from the saved profile. GPS capture happens in the profile form.
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoError, setGeoError] = useState("");
   const [filterByRadius, setFilterByRadius] = useState(false);
 
   const supabase = createClient();
 
   useEffect(() => {
     const fetchData = async () => {
+      // Get current user to highlight them and use their saved location as center
+      const { data: { user: sessionUser } } = await supabase.auth.getUser();
+      if (sessionUser) {
+        setCurrentUserId(sessionUser.id);
+        const { data: prof } = await supabase.from("profiles").select("role, location_lat, location_lng").eq("id", sessionUser.id).single();
+        setCurrentUserRole(prof?.role || null);
+        if (prof?.role !== "admin" && prof?.location_lat && prof?.location_lng) {
+          const loc = { lat: Number(prof.location_lat), lng: Number(prof.location_lng) };
+          setUserLocation(loc);
+          setFilterByRadius(true);
+        }
+      }
+
       const { data: all } = await supabase
         .from("profiles")
         .select("id, full_name, address, location_lat, location_lng, phone, avatar_url")
         .eq("role", "farmer")
         .order("full_name", { ascending: true });
 
-      const farmerList = all || [];
+      const farmerList = (all || []) as FarmerProfile[];
       setAllFarmers(farmerList);
       setFarmers(farmerList.filter((f) => f.location_lat && f.location_lng));
 
       const { data: products } = await supabase.from("products").select("farmer_id");
       if (products) {
         const counts: Record<string, number> = {};
-        products.forEach((p) => { counts[p.farmer_id] = (counts[p.farmer_id] || 0) + 1; });
+        products.forEach((p: { farmer_id: string }) => { counts[p.farmer_id] = (counts[p.farmer_id] || 0) + 1; });
         setProductCounts(counts);
       }
       setLoading(false);
     };
     fetchData();
   }, []);
-
-  const requestLocation = () => {
-    if (!navigator.geolocation) {
-      setGeoError("Geolocation is not supported by your browser.");
-      return;
-    }
-    setGeoLoading(true);
-    setGeoError("");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setFilterByRadius(true);
-        setGeoLoading(false);
-      },
-      () => {
-        setGeoError("Unable to retrieve your location. Please allow location access.");
-        setGeoLoading(false);
-      }
-    );
-  };
 
   // Farmers within 500km of user (only if location is set)
   const farmerWithDistance = allFarmers.map((f) => {
@@ -90,12 +93,15 @@ export default function MapPage() {
       f.full_name?.toLowerCase().includes(search.toLowerCase()) ||
       f.address?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
-    if (filterByRadius && userLocation && f.distanceKm !== null) return f.distanceKm <= 500;
+    if (currentUserRole !== "admin" && filterByRadius && userLocation && f.distanceKm !== null) return f.distanceKm <= 500;
     return true;
   });
 
   // For map: only farmers with coordinates; if filtering, only within radius
+  // UNLESS it's the current user (farmer should always see themselves)
   const mapFarmers = farmers.filter((f) => {
+    if (f.id === currentUserId) return true; // Always show me
+    if (currentUserRole === "admin") return true;
     if (!filterByRadius || !userLocation) return true;
     if (!f.location_lat || !f.location_lng) return false;
     return haversineKm(userLocation.lat, userLocation.lng, Number(f.location_lat), Number(f.location_lng)) <= 500;
@@ -122,22 +128,24 @@ export default function MapPage() {
 
           {/* Geolocation panel */}
           <div className="px-5 pb-3">
-            {!userLocation ? (
-              <button
-                onClick={requestLocation}
-                disabled={geoLoading}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-emerald-100 transition-all cursor-pointer disabled:opacity-60"
+            {currentUserRole === "admin" ? (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+                <p className="text-sm font-semibold text-purple-800">Admin Map View</p>
+                <p className="text-xs text-purple-600 mt-0.5">Showing all farms without location filtering</p>
+              </div>
+            ) : !userLocation ? (
+              <Link
+                href="/dashboard"
+                className="w-full flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-emerald-100 transition-all"
               >
-                {geoLoading ? (
-                  <span className="w-4 h-4 border-2 border-emerald-400 border-t-emerald-700 rounded-full animate-spin" />
-                ) : "📍"}
-                {geoLoading ? "Getting location..." : "Use My Location (500km filter)"}
-              </button>
+                <span>📍</span>
+                Set location in profile
+              </Link>
             ) : (
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-800">📍 Location Active</p>
+                   <div>
+                    <p className="text-sm font-semibold text-emerald-800">🏠 Profile Location Active</p>
                     <p className="text-xs text-emerald-600 mt-0.5">{inRangeCount} farms within 500km</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -149,14 +157,13 @@ export default function MapPage() {
                           : "bg-white border border-stone-200 text-stone-600 hover:border-emerald-400"
                       }`}
                     >
-                      {filterByRadius ? "Filtering" : "Filter Off"}
+                      {filterByRadius ? "500km On" : "500km Off"}
                     </button>
-                    <button onClick={() => { setUserLocation(null); setFilterByRadius(false); }} className="text-xs text-stone-400 hover:text-red-400 cursor-pointer">✕</button>
+                    <Link href="/dashboard" className="text-xs text-stone-500 hover:text-emerald-600 cursor-pointer">Edit</Link>
                   </div>
                 </div>
               </div>
             )}
-            {geoError && <p className="text-xs text-red-500 mt-2 px-1">{geoError}</p>}
           </div>
 
           {/* Search */}
@@ -266,6 +273,7 @@ export default function MapPage() {
               farmers={mapFarmers}
               selectedFarmerId={selectedFarmer}
               userLocation={userLocation}
+              currentUserId={currentUserId}
             />
           )}
         </div>

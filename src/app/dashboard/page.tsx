@@ -29,6 +29,8 @@ export default function ConsumerDashboard() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Review write
@@ -51,11 +53,7 @@ export default function ConsumerDashboard() {
   const supabase = createClient();
   const router = useRouter();
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
-
-  const fetchAll = async () => {
+  async function fetchAll() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
     setUser(user);
@@ -68,6 +66,8 @@ export default function ConsumerDashboard() {
       setFullName(prof.full_name || "");
       setPhone(phoneToDisplay(prof.phone));
       setAddress(prof.address || "");
+      setLat(prof.location_lat?.toString() || "");
+      setLng(prof.location_lng?.toString() || "");
     }
 
     const { data: ords } = await supabase
@@ -85,15 +85,32 @@ export default function ConsumerDashboard() {
     setMyReviews(revs || []);
 
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    fetchAll();
+  }, []);
 
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
       const phoneClean = phone ? extractPhoneDigits(phone) : null;
-      const { error } = await supabase.from("profiles").update({ full_name: fullName, phone: phoneClean, address }).eq("id", user.id);
+      const { error } = await supabase.from("profiles").update({ 
+        full_name: fullName, 
+        phone: phoneClean, 
+        address,
+        location_lat: parseFloat(lat) || null,
+        location_lng: parseFloat(lng) || null
+      }).eq("id", user.id);
       if (error) throw error;
-      setProfile({ ...profile, full_name: fullName, phone: phoneClean, address });
+      setProfile({ 
+        ...profile, 
+        full_name: fullName, 
+        phone: phoneClean, 
+        address,
+        location_lat: parseFloat(lat) || null,
+        location_lng: parseFloat(lng) || null
+      });
       setEditProfile(false);
       toast.success("Profile saved!");
     } catch (err: any) {
@@ -195,6 +212,7 @@ export default function ConsumerDashboard() {
       cancelled: "bg-red-100 text-red-600",
       canceled: "bg-red-100 text-red-600",
       return_requested: "bg-orange-100 text-orange-700",
+      admin_review: "bg-indigo-100 text-indigo-700",
       returned: "bg-purple-100 text-purple-700",
     };
     return map[status] || "bg-stone-100 text-stone-600";
@@ -204,7 +222,7 @@ export default function ConsumerDashboard() {
     const map: Record<string, string> = {
       pending: "Pending", paid: "Paid", shipped: "Shipped",
       completed: "Completed", cancelled: "Cancelled", canceled: "Cancelled",
-      return_requested: "Return Requested", returned: "Returned",
+      return_requested: "Return Requested", admin_review: "Admin Review", returned: "Returned",
     };
     return map[status] || status;
   };
@@ -380,6 +398,15 @@ export default function ConsumerDashboard() {
                           <div>
                             <p className="text-sm font-semibold text-purple-700">Return approved</p>
                             <p className="text-xs text-purple-600">Your return has been approved by the farmer.</p>
+                          </div>
+                        </div>
+                      )}
+                      {order.status === "admin_review" && (
+                        <div className="w-full flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2.5">
+                          <span className="text-indigo-500 text-lg">i</span>
+                          <div>
+                            <p className="text-sm font-semibold text-indigo-700">Return under admin review</p>
+                            <p className="text-xs text-indigo-600">The farmer sent your return request to the admin for a final decision.</p>
                           </div>
                         </div>
                       )}
@@ -612,7 +639,18 @@ export default function ConsumerDashboard() {
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-stone-700 block mb-1">Delivery Address</label>
-                    <AddressForm onChange={setAddress} className="mt-1" />
+                    <AddressForm 
+                      initialAddress={profile?.address || ""}
+                      initialCoords={{ lat: profile?.location_lat || null, lng: profile?.location_lng || null }}
+                      onChange={(addr, coords) => {
+                        setAddress(addr);
+                        if (coords) {
+                          setLat(coords.lat.toString());
+                          setLng(coords.lng.toString());
+                        }
+                      }}
+                      className="mt-1" 
+                    />
                   </div>
                   <div className="flex gap-3 pt-2">
                     <button onClick={handleSaveProfile} disabled={saving} className="flex-1 bg-emerald-600 text-white font-semibold py-3 rounded-xl hover:bg-emerald-700 cursor-pointer disabled:opacity-50">

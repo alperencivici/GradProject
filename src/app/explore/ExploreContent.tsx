@@ -27,11 +27,7 @@ export default function ExploreContent() {
   const [sortBy, setSortBy] = useState("newest");
   const supabase = createClient();
 
-  useEffect(() => {
-    fetchProducts();
-  }, [category, sortBy]);
-
-  const fetchProducts = async () => {
+  async function fetchProducts() {
     setLoading(true);
     let query = supabase
       .from("products")
@@ -52,7 +48,11 @@ export default function ExploreContent() {
     const { data } = await query;
     setProducts(data || []);
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    fetchProducts();
+  }, [category, sortBy]);
 
   const filtered = products.filter(
     (p) =>

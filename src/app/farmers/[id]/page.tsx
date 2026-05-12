@@ -15,11 +15,7 @@ export default function FarmerStorePage() {
   const supabase = createClient();
   const { addItem } = useCart();
 
-  useEffect(() => {
-    fetchFarmer();
-  }, [id]);
-
-  const fetchFarmer = async () => {
+  async function fetchFarmer() {
     const { data: prof } = await supabase.from("profiles").select("*").eq("id", id).single();
     setFarmer(prof);
 
@@ -34,7 +30,11 @@ export default function FarmerStorePage() {
     setReviews(revs || []);
 
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    fetchFarmer();
+  }, [id]);
 
   const handleQuickAdd = (product: any) => {
     addItem({

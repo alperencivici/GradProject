@@ -4,18 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-
-// All 81 Turkish provinces
-const TURKEY_CITIES = [
-  "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Aksaray", "Amasya", "Ankara", "Antalya", "Ardahan", "Artvin",
-  "Aydın", "Balıkesir", "Bartın", "Batman", "Bayburt", "Bilecik", "Bingöl", "Bitlis", "Bolu", "Burdur",
-  "Bursa", "Çanakkale", "Çankırı", "Çorum", "Denizli", "Diyarbakır", "Düzce", "Edirne", "Elazığ", "Erzincan",
-  "Erzurum", "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane", "Hakkari", "Hatay", "Iğdır", "Isparta", "İstanbul",
-  "İzmir", "Kahramanmaraş", "Karabük", "Karaman", "Kars", "Kastamonu", "Kayseri", "Kırıkkale", "Kırklareli", "Kırşehir",
-  "Kilis", "Kocaeli", "Konya", "Kütahya", "Malatya", "Manisa", "Mardin", "Mersin", "Muğla", "Muş",
-  "Nevşehir", "Niğde", "Ordu", "Osmaniye", "Rize", "Sakarya", "Samsun", "Şanlıurfa", "Siirt", "Sinop",
-  "Sivas", "Şırnak", "Tekirdağ", "Tokat", "Trabzon", "Tunceli", "Uşak", "Van", "Yalova", "Yozgat", "Zonguldak"
-];
+import AddressForm from "@/components/AddressForm";
 
 // Format phone input as +90 (5XX) XXX XX XX
 function formatTurkishPhone(value: string): string {
@@ -64,13 +53,12 @@ export default function SignupContent() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<"consumer" | "farmer">(defaultRole);
   const [phoneDisplay, setPhoneDisplay] = useState("");
-  const [city, setCity] = useState("");
-  const [district, setDistrict] = useState("");
+  const [address, setAddress] = useState("");
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const supabase = createClient();
-  const router = useRouter();
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatTurkishPhone(e.target.value);
@@ -82,8 +70,13 @@ export default function SignupContent() {
     setLoading(true);
     setError("");
 
+    if (!address) {
+      setError("Please provide your address.");
+      setLoading(false);
+      return;
+    }
+
     const phoneClean = phoneDisplay ? extractPhoneDigits(phoneDisplay) : null;
-    const addressFull = city ? (district ? `${district}, ${city}` : city) : null;
 
     // Sign up with metadata — the DB trigger will create the profile
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -94,6 +87,9 @@ export default function SignupContent() {
           full_name: fullName,
           role: role,
           phone: phoneClean,
+          address,
+          location_lat: coords?.lat?.toString() || "",
+          location_lng: coords?.lng?.toString() || "",
         }
       }
     });
@@ -104,15 +100,22 @@ export default function SignupContent() {
       return;
     }
 
-    // Also try direct profile insert as a fallback
+    // Direct profile upsert to ensure address and coordinates are saved
     if (authData.user) {
-      await supabase.from("profiles").upsert({
+      const { error: profileError } = await supabase.from("profiles").upsert({
         id: authData.user.id,
         full_name: fullName,
         role: role,
         phone: phoneClean,
-        address: addressFull,
+        address: address,
+        location_lat: coords?.lat,
+        location_lng: coords?.lng,
       }, { onConflict: "id" });
+      if (profileError) {
+        setError(`Account created, but profile address was not saved: ${profileError.message}`);
+        setLoading(false);
+        return;
+      }
     }
 
     setSuccess(true);
@@ -149,13 +152,13 @@ export default function SignupContent() {
 
         <form onSubmit={handleSignup} className="glass rounded-3xl p-8 shadow-xl space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-              {error}
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium animate-shake">
+              ⚠️ {error}
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-semibold text-stone-700 mb-3">I am a...</label>
+            <label className="block text-sm font-semibold text-stone-700 mb-3 text-center">I am a...</label>
             <div className="grid grid-cols-2 gap-3">
               <button type="button" onClick={() => setRole("consumer")}
                 className={`p-4 rounded-xl border-2 text-center transition-all cursor-pointer ${role === "consumer" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-stone-200 bg-white hover:border-stone-300 text-stone-600"}`}>
@@ -172,69 +175,63 @@ export default function SignupContent() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-stone-700 mb-2">Full Name</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-stone-800 placeholder:text-stone-400" />
-          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-2">Full Name</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-stone-800 placeholder:text-stone-400" />
+            </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-stone-700 mb-2">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-stone-800 placeholder:text-stone-400" />
-          </div>
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-2">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-stone-800 placeholder:text-stone-400" />
+            </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-stone-700 mb-2">Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min 6 characters"
-                required
-                minLength={6}
-                className="w-full px-4 py-3 pr-12 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-stone-800 placeholder:text-stone-400"
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-2">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  required
+                  minLength={6}
+                  className="w-full px-4 py-3 pr-12 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-stone-800 placeholder:text-stone-400"
+                />
+                <button type="button" onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer" tabIndex={-1}>
+                  <EyeIcon open={showPassword} />
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-2">Phone</label>
+              <div className="relative">
+                <input type="tel" value={phoneDisplay} onChange={handlePhoneChange} placeholder="+90 (5XX) XXX XX XX"
+                  className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-stone-800 placeholder:text-stone-400" />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-stone-400">🇹🇷 TR</span>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <label className="block text-sm font-semibold text-stone-700 mb-3">Address & Location</label>
+              <AddressForm 
+                onChange={(addr, coords) => {
+                  setAddress(addr);
+                  setCoords(coords);
+                }} 
               />
-              <button type="button" onClick={() => setShowPassword(v => !v)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer" tabIndex={-1}
-                aria-label={showPassword ? "Hide password" : "Show password"}>
-                <EyeIcon open={showPassword} />
-              </button>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-stone-700 mb-2">Phone</label>
-            <div className="relative">
-              <input type="tel" value={phoneDisplay} onChange={handlePhoneChange} placeholder="+90 (5XX) XXX XX XX"
-                className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-stone-800 placeholder:text-stone-400" />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-stone-400">🇹🇷 TR</span>
-            </div>
-          </div>
-
-          {/* City / District */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-stone-700 mb-2">City (İl)</label>
-              <select value={city} onChange={(e) => { setCity(e.target.value); setDistrict(""); }}
-                className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-stone-800 cursor-pointer">
-                <option value="">Select city</option>
-                {TURKEY_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-stone-700 mb-2">District (İlçe)</label>
-              <input type="text" value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="e.g. Çankaya"
-                className="w-full px-4 py-3 rounded-xl border border-stone-300 bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-stone-800 placeholder:text-stone-400" />
-            </div>
-          </div>
-
-          <button type="submit" disabled={loading} className="w-full bg-emerald-600 text-white font-semibold py-3.5 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 cursor-pointer">
-            {loading ? "Creating account..." : "Create Account"}
+          <button type="submit" disabled={loading} className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 cursor-pointer mt-4">
+            {loading ? "Creating account..." : "Complete Registration"}
           </button>
 
-          <p className="text-center text-stone-500 text-sm">
+          <p className="text-center text-stone-500 text-sm pb-2">
             Already have an account?{" "}
-            <Link href="/login" className="text-emerald-600 font-semibold hover:underline">Sign in</Link>
+            <Link href="/login" className="text-emerald-600 font-bold hover:underline">Sign in</Link>
           </p>
         </form>
       </div>

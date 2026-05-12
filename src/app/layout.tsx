@@ -1,20 +1,9 @@
 import type { Metadata } from "next";
-import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { CartProvider } from "@/context/CartContext";
 import { Toaster } from "react-hot-toast";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-
-const outfit = Outfit({
-  subsets: ["latin"],
-  variable: "--font-outfit",
-});
 
 export const metadata: Metadata = {
   title: "Kırsof | Farm-to-Table Marketplace",
@@ -30,7 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${outfit.variable} antialiased bg-[#f4f3ec] text-stone-900 selection:bg-emerald-500 selection:text-white flex flex-col min-h-screen font-sans`}
+        className="antialiased bg-[#f4f3ec] text-stone-900 selection:bg-emerald-500 selection:text-white flex flex-col min-h-screen font-sans"
       >
         <CartProvider>
           <Toaster position="bottom-right" />

@@ -41,9 +41,7 @@ export default function FarmerDashboard() {
   const supabase = createClient();
   const router = useRouter();
 
-  useEffect(() => { fetchAll(); }, []);
-
-  const fetchAll = async () => {
+  async function fetchAll() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
     setUser(user);
@@ -75,7 +73,9 @@ export default function FarmerDashboard() {
     setReviews(revs || []);
 
     setLoading(false);
-  };
+  }
+
+  useEffect(() => { fetchAll(); }, []);
 
   const resetForm = () => { setEditingProduct(null); setPName(""); setPDesc(""); setPPrice(""); setPStock(""); setPCat("fruits"); setPImg(""); setPImgFile(null); };
 
@@ -92,7 +92,7 @@ export default function FarmerDashboard() {
 
       if (pImgFile) {
         const fileExt = pImgFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
         const filePath = `product_images/${fileName}`;
         
         const { error: uploadError } = await supabase.storage.from('images').upload(filePath, pImgFile);
@@ -159,6 +159,18 @@ export default function FarmerDashboard() {
       fetchAll();
     } catch (err: any) {
       toast.error(err.message || "Failed to approve return");
+    }
+  };
+
+  const handleSendReturnToAdmin = async (orderId: string) => {
+    if (!confirm("Send this return to admin review? The admin will make the final decision.")) return;
+    try {
+      const { error } = await supabase.from("orders").update({ status: "admin_review" }).eq("id", orderId);
+      if (error) throw error;
+      toast.success("Return sent to admin review.");
+      fetchAll();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send return to admin review");
     }
   };
 
@@ -364,9 +376,10 @@ export default function FarmerDashboard() {
                           : order.status === "shipped" ? "bg-amber-100 text-amber-700" 
                           : order.status === "completed" ? "bg-emerald-100 text-emerald-700" 
                           : order.status === "return_requested" ? "bg-orange-100 text-orange-700" 
+                          : order.status === "admin_review" ? "bg-indigo-100 text-indigo-700"
                           : order.status === "returned" ? "bg-purple-100 text-purple-700" 
                           : "bg-stone-100 text-stone-600"
-                        }`}>{order.status === "return_requested" ? "Return Req." : order.status}</span>
+                        }`}>{order.status === "return_requested" ? "Return Req." : order.status === "admin_review" ? "Admin Review" : order.status}</span>
                         <p className="text-lg font-extrabold text-stone-900">₺{orderTotal.toFixed(2)}</p>
                       </div>
                     </div>
@@ -400,7 +413,7 @@ export default function FarmerDashboard() {
                                   <span className="font-semibold">Reason:</span>{" "}
                                   {order.return_reason || "No reason provided"}
                                 </p>
-                                <p className="text-orange-600 text-xs mt-1">Please review and approve or contact the customer.</p>
+                                <p className="text-orange-600 text-xs mt-1">Approve it, or send it to admin review for the final decision.</p>
                               </div>
                               <button
                                 onClick={() => handleApproveReturn(order.id)}
@@ -408,7 +421,19 @@ export default function FarmerDashboard() {
                               >
                                 ✅ Approve Return
                               </button>
+                              <button
+                                onClick={() => handleSendReturnToAdmin(order.id)}
+                                className="flex-shrink-0 bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold px-4 py-2 rounded-lg text-xs cursor-pointer hover:bg-indigo-100 transition-colors"
+                              >
+                                Admin Review
+                              </button>
                             </div>
+                          </div>
+                        )}
+                        {order.status === "admin_review" && (
+                          <div className="w-full flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2.5">
+                            <span className="text-indigo-500">i</span>
+                            <p className="text-sm font-semibold text-indigo-700">Return sent to admin review</p>
                           </div>
                         )}
                         {order.status === "returned" && (
@@ -489,13 +514,19 @@ export default function FarmerDashboard() {
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-stone-700 block mb-1">Farm Address</label>
-                    <AddressForm onChange={setAddress} className="mt-1" />
+                    <AddressForm 
+                      initialAddress={profile?.address || ""}
+                      initialCoords={{ lat: parseFloat(lat) || null, lng: parseFloat(lng) || null }}
+                      onChange={(addr, coords) => {
+                        setAddress(addr);
+                        if (coords) {
+                          setLat(coords.lat.toString());
+                          setLng(coords.lng.toString());
+                        }
+                      }} 
+                      className="mt-1" 
+                    />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><label className="text-sm font-semibold text-stone-700 block mb-1">Latitude <span className="text-stone-400 font-normal">(for map)</span></label><input value={lat} onChange={(e) => setLat(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-stone-300 text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="39.9334" /></div>
-                    <div><label className="text-sm font-semibold text-stone-700 block mb-1">Longitude <span className="text-stone-400 font-normal">(for map)</span></label><input value={lng} onChange={(e) => setLng(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-stone-300 text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="32.8597" /></div>
-                  </div>
-                  <p className="text-xs text-stone-400">💡 Tip: Find your coordinates on Google Maps by right-clicking your farm location.</p>
                   <div className="flex gap-3 pt-2">
                     <button onClick={handleSaveProfile} disabled={profileSaving} className="flex-1 bg-emerald-600 text-white font-semibold py-3 rounded-xl hover:bg-emerald-700 cursor-pointer disabled:opacity-50">{profileSaving ? "Saving..." : "Save Changes"}</button>
                     <button onClick={() => setEditProfile(false)} className="px-6 py-3 bg-stone-100 text-stone-700 font-semibold rounded-xl cursor-pointer hover:bg-stone-200">Cancel</button>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import { useCart } from "@/context/CartContext";
 
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
@@ -12,15 +13,16 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const supabase = createClient();
   const router = useRouter();
+  const { totalItems } = useCart();
 
   useEffect(() => {
     // 1. Initial Fetch
     const getUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        const { data } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
-        setProfile(data);
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        setUser(data.user);
+        const { data: profileData } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
+        setProfile(profileData);
       } else {
         setUser(null);
         setProfile(null);
@@ -29,7 +31,7 @@ export default function Navbar() {
     getUser();
 
     // 2. Setup Real-time Auth Listener
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       if (event === "SIGNED_IN" && session?.user) {
         setUser(session.user);
         const { data } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
@@ -94,6 +96,9 @@ export default function Navbar() {
           {profile?.role === "admin" && (
             <>
               <Link href="/dashboard/admin" className="hover:text-purple-600 transition-colors">Admin Panel</Link>
+              <Link href="/explore" className="hover:text-purple-600 transition-colors">Marketplace</Link>
+              <Link href="/map" className="hover:text-purple-600 transition-colors">Farm Map</Link>
+              <Link href="/about" className="hover:text-purple-600 transition-colors">Our Story</Link>
             </>
           )}
         </nav>
@@ -105,6 +110,11 @@ export default function Navbar() {
               {(!profile || profile.role === "consumer") && (
                 <Link href="/cart" className="relative p-2.5 bg-stone-100 rounded-full text-stone-600 hover:text-emerald-600 hover:bg-stone-200 transition-colors shadow-sm">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                  {totalItems > 0 && (
+                    <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                      {totalItems > 99 ? "99+" : totalItems}
+                    </span>
+                  )}
                 </Link>
               )}
               
@@ -168,7 +178,11 @@ export default function Navbar() {
             <Link href="/dashboard/farmer" className="text-lg font-semibold text-amber-600" onClick={() => setMenuOpen(false)}>My Seller Dashboard</Link>
           )}
           {profile?.role === "admin" && (
-            <Link href="/dashboard/admin" className="text-lg font-semibold text-purple-600" onClick={() => setMenuOpen(false)}>Admin Panel</Link>
+            <>
+              <Link href="/dashboard/admin" className="text-lg font-semibold text-purple-600" onClick={() => setMenuOpen(false)}>Admin Panel</Link>
+              <Link href="/explore" className="text-lg font-semibold text-stone-700 hover:text-purple-600" onClick={() => setMenuOpen(false)}>Marketplace</Link>
+              <Link href="/map" className="text-lg font-semibold text-stone-700 hover:text-purple-600" onClick={() => setMenuOpen(false)}>Farm Map</Link>
+            </>
           )}
 
           <hr className="border-stone-100" />
