@@ -99,8 +99,16 @@ export default function CheckoutPage() {
   // Cargo unavailable if >500km (roughly one day of shipping)
   const cargoBlocked = maxDistanceKm !== null && maxDistanceKm > 500;
 
-  const effectiveDeliveryMethod = deliveryMethod === "cargo" && cargoBlocked ? "pickup" : deliveryMethod;
-  const shippingFee = effectiveDeliveryMethod === "pickup" ? 0 : effectiveDeliveryMethod === "courier" ? 25 : cargoFee;
+  // Courier fee: base ₺15 + ₺0.5/km
+  const courierFee = maxDistanceKm !== null ? Math.round(15 + maxDistanceKm * 0.5) : 25;
+  // Courier unavailable if >50km
+  const courierBlocked = maxDistanceKm !== null && maxDistanceKm > 50;
+
+  let effectiveDeliveryMethod = deliveryMethod;
+  if (deliveryMethod === "cargo" && cargoBlocked) effectiveDeliveryMethod = "pickup";
+  if (deliveryMethod === "courier" && courierBlocked) effectiveDeliveryMethod = "pickup";
+
+  const shippingFee = effectiveDeliveryMethod === "pickup" ? 0 : effectiveDeliveryMethod === "courier" ? courierFee : cargoFee;
   const grandTotal = totalPrice + shippingFee;
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -249,15 +257,29 @@ export default function CheckoutPage() {
               {/* Courier */}
               <button
                 type="button"
-                onClick={() => setDeliveryMethod("courier")}
-                className={`p-5 rounded-xl border-2 text-left transition-all cursor-pointer ${
-                  effectiveDeliveryMethod === "courier" ? "border-emerald-500 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"
+                onClick={() => { if (!courierBlocked) setDeliveryMethod("courier"); }}
+                disabled={courierBlocked}
+                className={`p-5 rounded-xl border-2 text-left transition-all relative ${
+                  courierBlocked
+                    ? "border-stone-200 bg-stone-50 opacity-60 cursor-not-allowed"
+                    : effectiveDeliveryMethod === "courier"
+                      ? "border-emerald-500 bg-emerald-50 cursor-pointer"
+                      : "border-stone-200 bg-white hover:border-stone-300 cursor-pointer"
                 }`}
               >
                 <div className="text-2xl mb-2">🚲</div>
                 <div className="font-semibold text-stone-800">Kırsof Courier</div>
-                <div className="text-xs text-stone-500 mt-1">Same-day local delivery</div>
-                <div className="text-sm font-bold mt-2 text-stone-700">₺25</div>
+                {courierBlocked ? (
+                  <>
+                    <div className="text-xs text-red-500 mt-1 font-semibold">Too far — over 50 km</div>
+                    <div className="text-sm font-bold mt-2 text-red-400 line-through">Unavailable</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs text-stone-500 mt-1">Same-day local delivery</div>
+                    <div className="text-sm font-bold mt-2 text-stone-700">₺{courierFee}</div>
+                  </>
+                )}
               </button>
 
               {/* Cargo — dynamic price & availability */}

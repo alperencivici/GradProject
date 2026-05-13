@@ -42,7 +42,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   useEffect(() => {
     const init = async () => {

@@ -194,15 +194,6 @@ export default function MapSection({
                     </div>
                   </div>
                 )}
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 0" }}>
-                  <span style={{ fontSize: "16px" }}>🗺️</span>
-                  <div>
-                    <div style={{ fontSize: "10px", color: "#a8a29e", fontWeight: "600", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>Coordinates</div>
-                    <div style={{ fontSize: "12px", color: "#78716c", fontWeight: "500", fontFamily: "monospace" }}>
-                      {Number(farmer.location_lat).toFixed(4)}, {Number(farmer.location_lng).toFixed(4)}
-                    </div>
-                  </div>
-                </div>
               </div>
 
               {/* CTA Button */}
