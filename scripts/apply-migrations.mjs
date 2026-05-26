@@ -1,11 +1,50 @@
 /**
- * Apply Kırsof DB migrations using the Supabase service role key.
+ * Apply Kirsof DB migrations using Supabase credentials from the environment.
  * Run with: node scripts/apply-migrations.mjs
+ *
+ * Requires:
+ *   NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL
+ *   SUPABASE_SERVICE_ROLE_KEY
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://wwcnvydqyaccwfsceqxu.supabase.co';
-const SERVICE_KEY = 'sb_secret_1yjNRkFphWU41HpRyYjMiQ_tEVJNT4L';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+
+  for (const rawLine of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    if (process.env[key]) continue;
+
+    process.env[key] = rawValue.trim().replace(/^(['"])(.*)\1$/, '$2');
+  }
+}
+
+function requireEnv(names) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+
+  console.error(`Missing required environment variable: ${names.join(' or ')}`);
+  process.exit(1);
+}
+
+loadEnvFile(path.join(__dirname, '..', '.env.local'));
+loadEnvFile(path.join(__dirname, '..', '.env'));
+
+const SUPABASE_URL = requireEnv(['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_URL']);
+const SERVICE_KEY = requireEnv(['SUPABASE_SERVICE_ROLE_KEY']);
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false },

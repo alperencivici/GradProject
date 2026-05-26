@@ -1,6 +1,6 @@
 /**
  * Execute seed.sql against Supabase Postgres.
- * Run with: $env:DB_URL="postgresql://postgres.wwcnvydqyaccwfsceqxu:wine-east-owner@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"; node scripts/seed-db.mjs
+ * Run with: $env:DB_URL="postgresql://postgres.wwcnvydqyaccwfsceqxu:YOUR_PASSWORD@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"; node scripts/seed-db.mjs
  */
 import pkg from 'pg';
 import fs from 'fs';
